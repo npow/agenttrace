@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.pyc
+.venv/
+.env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.DS_Store

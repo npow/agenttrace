@@ -1,0 +1,13 @@
+{
+  "name": "agenttrace-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/viewer",
+    "packages/retro",
+    "views/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

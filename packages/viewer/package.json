@@ -1,0 +1,33 @@
+{
+  "name": "@agenttrace/viewer",
+  "version": "0.1.0",
+  "description": "Embeddable viewer for AI coding agent sessions — extensible via views",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./view-api": {
+      "import": "./dist/view-api.js",
+      "types": "./dist/view-api.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "typescript": "^5.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "@types/react": "^18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  }
+}
