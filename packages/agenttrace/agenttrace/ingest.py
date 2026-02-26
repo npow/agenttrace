@@ -68,6 +68,75 @@ def clear_skip(file_path: Path, conn):
     conn.execute("DELETE FROM skip_cache WHERE file_path = ?", [str(file_path)])
 
 
+def _classify_tool_error(text: str) -> str:
+    """Classify a tool error message into a canonical type.
+
+    Types ordered by observed frequency (sample of 103 errors):
+      command_failed (43), sibling_error (15), file_not_read (15),
+      edit_conflict (13), file_not_found (8), user_rejected (3),
+      file_changed (3), network_error (3), permission_denied (2),
+      file_too_large (1), validation_error, timeout, other.
+    """
+    t = text.lower()
+    # Sibling cascade — most common non-bash error
+    if "sibling tool call errored" in t:
+        return "sibling_error"
+    # File-not-read constraint (Write/Edit without prior Read)
+    if "file has not been read yet" in t or "read it first before writing" in t:
+        return "file_not_read"
+    # Edit conflicts — string not found or multiple matches
+    if (
+        "string to replace not found" in t
+        or "matches of the string to replace" in t
+        or "replace_all is false" in t
+    ):
+        return "edit_conflict"
+    # File does not exist / path not found
+    if (
+        "file does not exist" in t
+        or "no such file" in t
+        or "file not found" in t
+        or "cannot find" in t
+        or "path does not exist" in t
+        or "eisdir" in t  # directory where file expected
+    ):
+        return "file_not_found"
+    # File changed between read and write
+    if "file has changed" in t or "file was modified" in t or "has been modified" in t:
+        return "file_changed"
+    # File too large for context window
+    if "too large" in t or "exceeds maximum" in t or ("file content" in t and "tokens" in t):
+        return "file_too_large"
+    # System permission denial (Claude Code's permission system)
+    if (
+        ("permission to use" in t and "denied" in t)
+        or ("requested permissions" in t and "but you" in t)
+    ):
+        return "permission_denied"
+    # Explicit user rejection
+    if (
+        "doesn't want to proceed" in t
+        or "tool use was rejected" in t
+        or "user rejected" in t
+        or "user cancelled" in t
+        or "user denied" in t
+    ):
+        return "user_rejected"
+    # Bash command failed (exit codes)
+    if "exit code" in t or "returned non-zero" in t or "non-zero exit" in t:
+        return "command_failed"
+    # Network / HTTP errors
+    if "request failed" in t or "status code" in t or "network error" in t:
+        return "network_error"
+    # Tool input validation
+    if "inputvalidationerror" in t or "validation error" in t:
+        return "validation_error"
+    # Timeouts
+    if "timed out" in t or "timeout" in t:
+        return "timeout"
+    return "other"
+
+
 def parse_entry(line: str, project_name: str) -> dict | None:
     """Parse a single JSONL line into a raw_entry dict."""
     try:
@@ -108,10 +177,16 @@ def parse_entry(line: str, project_name: str) -> dict | None:
     user_text_length = 0
     is_tool_result = False
     tool_result_error = False
+    tool_result_error_type = None
     content_types = []
     tool_names = []
+    tool_file_paths = []
     text_content = ""
     text_length = 0
+
+    # Tools that take a file path as input
+    _FILE_PATH_TOOLS = {"Edit", "Write", "Read", "NotebookEdit", "NotebookRead"}
+    _FILE_PATH_INPUT_KEYS = ("file_path", "notebook_path", "path")
 
     if isinstance(content, str):
         if entry_type == "user":
@@ -134,11 +209,29 @@ def parse_entry(line: str, project_name: str) -> dict | None:
                 else:
                     text_parts.append(t)
             elif btype == "tool_use":
-                tool_names.append(block.get("name", ""))
+                name = block.get("name", "")
+                tool_names.append(name)
+                if name in _FILE_PATH_TOOLS:
+                    inp = block.get("input", {})
+                    for key in _FILE_PATH_INPUT_KEYS:
+                        fp = inp.get(key)
+                        if fp and isinstance(fp, str):
+                            tool_file_paths.append(fp)
+                            break
             elif btype == "tool_result":
                 is_tool_result = True
                 if block.get("is_error"):
                     tool_result_error = True
+                    # Extract error text to classify error type
+                    err_content = block.get("content", "")
+                    if isinstance(err_content, list):
+                        err_text = " ".join(
+                            b.get("text", "") for b in err_content
+                            if isinstance(b, dict) and b.get("type") == "text"
+                        )
+                    else:
+                        err_text = str(err_content) if err_content else ""
+                    tool_result_error_type = _classify_tool_error(err_text)
             elif btype == "thinking":
                 pass  # skip thinking content to save space
 
@@ -163,9 +256,11 @@ def parse_entry(line: str, project_name: str) -> dict | None:
         "user_text_length": user_text_length,
         "is_tool_result": is_tool_result,
         "tool_result_error": tool_result_error,
+        "tool_result_error_type": tool_result_error_type,
         "model": model,
         "content_types": content_types,
         "tool_names": tool_names,
+        "tool_file_paths": tool_file_paths,
         "text_content": text_content,
         "text_length": text_length,
         "input_tokens": input_tokens,
@@ -267,11 +362,15 @@ def ingest_file(file_path: Path, project_name: str, conn) -> tuple[int, int]:
                 if progress:
                     progress_entries.append(progress)
 
+    # Accumulate language counts per session while inserting
+    from collections import Counter
+    session_lang_counts: dict[str, Counter] = {}
+
     for entry in entries:
         conn.execute(
             """
             INSERT OR REPLACE INTO raw_entries VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             [
@@ -286,9 +385,11 @@ def ingest_file(file_path: Path, project_name: str, conn) -> tuple[int, int]:
                 entry["user_text_length"],
                 entry["is_tool_result"],
                 entry["tool_result_error"],
+                entry["tool_result_error_type"],
                 entry["model"],
                 _json_serialize(entry["content_types"]),
                 _json_serialize(entry["tool_names"]),
+                _json_serialize(entry["tool_file_paths"]),
                 entry["text_content"],
                 entry["text_length"],
                 entry["input_tokens"],
@@ -299,6 +400,30 @@ def ingest_file(file_path: Path, project_name: str, conn) -> tuple[int, int]:
                 entry["cwd"],
             ],
         )
+
+        # Accumulate file extensions for session_languages
+        sid = entry.get("session_id")
+        fps = entry.get("tool_file_paths") or []
+        if sid and fps:
+            if sid not in session_lang_counts:
+                session_lang_counts[sid] = Counter()
+            for fp in fps:
+                ext = Path(fp).suffix.lstrip(".").lower()
+                if ext:
+                    session_lang_counts[sid][ext] += 1
+
+    # Write session_languages
+    for sid, counter in session_lang_counts.items():
+        for ext, count in counter.items():
+            conn.execute(
+                """
+                INSERT INTO session_languages (session_id, extension, file_count)
+                VALUES (?, ?, ?)
+                ON CONFLICT (session_id, extension)
+                DO UPDATE SET file_count = file_count + excluded.file_count
+                """,
+                [sid, ext, count],
+            )
 
     for p in progress_entries:
         conn.execute(

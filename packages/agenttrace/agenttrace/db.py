@@ -102,9 +102,11 @@ def _init_schema(conn: sqlite3.Connection):
             user_text_length INTEGER DEFAULT 0,
             is_tool_result INTEGER DEFAULT 0,
             tool_result_error INTEGER DEFAULT 0,
+            tool_result_error_type TEXT,         -- classified error type (command_failed, user_rejected, etc.)
             model TEXT,
             content_types TEXT,  -- JSON array as text
             tool_names TEXT,     -- JSON array as text
+            tool_file_paths TEXT, -- JSON array of file paths from file-touching tool_use blocks
             text_content TEXT,
             text_length INTEGER DEFAULT 0,
             input_tokens INTEGER DEFAULT 0,
@@ -179,6 +181,15 @@ def _init_schema(conn: sqlite3.Connection):
             use_count INTEGER DEFAULT 0,
             error_count INTEGER DEFAULT 0,
             PRIMARY KEY (session_id, tool_name)
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS session_languages (
+            session_id TEXT,
+            extension TEXT,
+            file_count INTEGER DEFAULT 0,
+            PRIMARY KEY (session_id, extension)
         )
     """)
 
@@ -351,6 +362,12 @@ def _init_schema(conn: sqlite3.Connection):
             generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Migrate: add new columns to raw_entries if missing
+    _migrate_add_columns(conn, "raw_entries", [
+        ("tool_result_error_type", "TEXT"),
+        ("tool_file_paths", "TEXT"),
+    ])
 
     # Migrate: add new columns to session_judgments if missing
     _migrate_add_columns(conn, "session_judgments", [
