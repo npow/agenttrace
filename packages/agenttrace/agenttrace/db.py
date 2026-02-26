@@ -367,6 +367,9 @@ def _init_schema(conn: sqlite3.Connection):
     _migrate_add_columns(conn, "raw_entries", [
         ("tool_result_error_type", "TEXT"),
         ("tool_file_paths", "TEXT"),
+        # Primary tool's key input: Bash command, Task prompt snippet, etc.
+        # Lets the live monitor show "what it's doing" beyond just the tool name.
+        ("tool_input_preview", "TEXT"),
     ])
 
     # Migrate: add new columns to session_judgments if missing

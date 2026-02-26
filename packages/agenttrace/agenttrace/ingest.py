@@ -134,6 +134,9 @@ def _classify_tool_error(text: str) -> str:
     # Timeouts
     if "timed out" in t or "timeout" in t:
         return "timeout"
+    # Task tool errors (TaskOutput on missing/completed task)
+    if "task not found" in t or "is not running" in t or "tool_use_error" in t:
+        return "task_error"
     return "other"
 
 
@@ -188,6 +191,16 @@ def parse_entry(line: str, project_name: str) -> dict | None:
     _FILE_PATH_TOOLS = {"Edit", "Write", "Read", "NotebookEdit", "NotebookRead"}
     _FILE_PATH_INPUT_KEYS = ("file_path", "notebook_path", "path")
 
+    # Tools whose primary input is a free-text string worth storing for live display
+    _TEXT_INPUT_TOOLS: dict[str, str] = {
+        "Bash":      "command",
+        "Task":      "prompt",
+        "WebSearch": "query",
+        "WebFetch":  "url",
+        "Grep":      "pattern",
+    }
+    tool_input_preview = ""
+
     if isinstance(content, str):
         if entry_type == "user":
             user_text = content
@@ -211,26 +224,40 @@ def parse_entry(line: str, project_name: str) -> dict | None:
             elif btype == "tool_use":
                 name = block.get("name", "")
                 tool_names.append(name)
+                inp = block.get("input", {})
                 if name in _FILE_PATH_TOOLS:
-                    inp = block.get("input", {})
                     for key in _FILE_PATH_INPUT_KEYS:
                         fp = inp.get(key)
                         if fp and isinstance(fp, str):
                             tool_file_paths.append(fp)
                             break
+                # Capture the primary input of the first text-input tool call
+                if not tool_input_preview and name in _TEXT_INPUT_TOOLS:
+                    input_key = _TEXT_INPUT_TOOLS[name]
+                    raw = inp.get(input_key, "")
+                    if raw and isinstance(raw, str):
+                        # Store first line, truncated to 200 chars
+                        tool_input_preview = raw.strip().split("\n")[0][:200]
             elif btype == "tool_result":
                 is_tool_result = True
+                tr_content = block.get("content", "")
+                # Extract the tool result output text (cap at 1500 chars)
+                if isinstance(tr_content, list):
+                    tr_texts = [
+                        c.get("text", "") for c in tr_content
+                        if isinstance(c, dict) and c.get("type") == "text"
+                    ]
+                    tr_text = "\n".join(tr_texts)
+                elif isinstance(tr_content, str):
+                    tr_text = tr_content
+                else:
+                    tr_text = ""
+                if tr_text:
+                    user_text_parts.append(tr_text[:1500])
                 if block.get("is_error"):
                     tool_result_error = True
                     # Extract error text to classify error type
-                    err_content = block.get("content", "")
-                    if isinstance(err_content, list):
-                        err_text = " ".join(
-                            b.get("text", "") for b in err_content
-                            if isinstance(b, dict) and b.get("type") == "text"
-                        )
-                    else:
-                        err_text = str(err_content) if err_content else ""
+                    err_text = tr_text
                     tool_result_error_type = _classify_tool_error(err_text)
             elif btype == "thinking":
                 pass  # skip thinking content to save space
@@ -269,6 +296,7 @@ def parse_entry(line: str, project_name: str) -> dict | None:
         "duration_ms": duration_ms or 0,
         "git_branch": git_branch,
         "cwd": cwd,
+        "tool_input_preview": tool_input_preview,
     }
 
 
@@ -369,8 +397,15 @@ def ingest_file(file_path: Path, project_name: str, conn) -> tuple[int, int]:
     for entry in entries:
         conn.execute(
             """
-            INSERT OR REPLACE INTO raw_entries VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            INSERT OR REPLACE INTO raw_entries (
+                entry_id, session_id, project_name, entry_type, timestamp_utc,
+                parent_uuid, is_sidechain, user_text, user_text_length,
+                is_tool_result, tool_result_error, tool_result_error_type,
+                model, content_types, tool_names, tool_file_paths,
+                text_content, text_length, input_tokens, output_tokens,
+                system_subtype, duration_ms, git_branch, cwd, tool_input_preview
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             [
@@ -398,6 +433,7 @@ def ingest_file(file_path: Path, project_name: str, conn) -> tuple[int, int]:
                 entry["duration_ms"],
                 entry["git_branch"],
                 entry["cwd"],
+                entry.get("tool_input_preview", ""),
             ],
         )
 
