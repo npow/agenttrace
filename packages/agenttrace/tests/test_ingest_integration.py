@@ -16,9 +16,9 @@ import pytest
 def _make_db(db_path: Path):
     """Set env, reload modules, return (conn, db_mod, ingest_mod)."""
     os.environ["CLAUDE_RETRO_DB"] = str(db_path)
-    import agenttrace.config as cfg
-    import agenttrace.db as db_mod
-    import agenttrace.ingest as ingest_mod
+    import sessionlog.config as cfg
+    import sessionlog.db as db_mod
+    import sessionlog.ingest as ingest_mod
 
     importlib.reload(cfg)
     importlib.reload(db_mod)

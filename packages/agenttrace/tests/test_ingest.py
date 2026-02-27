@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agenttrace.ingest import parse_entry, parse_progress_entry
+from sessionlog.ingest import parse_entry, parse_progress_entry
 
 PROJECT = "test-project"
 

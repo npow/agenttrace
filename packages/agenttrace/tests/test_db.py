@@ -13,8 +13,8 @@ def make_conn(db_path: Path) -> sqlite3.Connection:
 
     # Force db module to re-initialize with the new path
     import importlib
-    import agenttrace.config as cfg
-    import agenttrace.db as db_mod
+    import sessionlog.config as cfg
+    import sessionlog.db as db_mod
 
     # Reload config so DB_PATH picks up the env var
     importlib.reload(cfg)
@@ -92,8 +92,8 @@ class TestSchemaCreation:
         os.environ["CLAUDE_RETRO_DB"] = str(db_path)
 
         import importlib
-        import agenttrace.config as cfg
-        import agenttrace.db as db_mod
+        import sessionlog.config as cfg
+        import sessionlog.db as db_mod
 
         importlib.reload(cfg)
         importlib.reload(db_mod)
