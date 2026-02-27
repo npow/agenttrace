@@ -4,8 +4,8 @@ import json
 import os
 from pathlib import Path
 
-from agenttrace.config import CLAUDE_PROJECTS_DIR
-from agenttrace.db import get_conn
+from sessionlog.config import CLAUDE_PROJECTS_DIR
+from sessionlog.db import get_conn
 
 
 def _json_serialize(obj):
@@ -490,7 +490,7 @@ def ingest_file(file_path: Path, project_name: str, conn) -> tuple[int, int]:
 
 def run_ingest() -> dict:
     """Run full incremental ingestion. Returns stats."""
-    from agenttrace.db import get_writer
+    from sessionlog.db import get_writer
 
     conn = get_writer()
     files = find_jsonl_files()

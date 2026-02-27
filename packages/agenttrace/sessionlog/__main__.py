@@ -1,19 +1,19 @@
-"""CLI entry point: agenttrace start / status / stop."""
+"""CLI entry point: sessionlog start / status / stop."""
 
 import click
 
 
 @click.group()
 def cli():
-    """agenttrace — real-time ingestion for AI coding agent sessions."""
+    """sessionlog — real-time ingestion for AI coding agent sessions."""
 
 
 @cli.command()
-@click.option("--db", default="~/.agenttrace/data.sqlite", show_default=True, help="SQLite database path")
+@click.option("--db", default="~/.sessionlog/data.sqlite", show_default=True, help="SQLite database path")
 @click.option("--sources-dir", default="~/.claude/projects", show_default=True, help="Directory to watch for session files")
 def start(db: str, sources_dir: str):
     """Start the ingestion daemon."""
-    from agenttrace.watcher import IngestionWorker
+    from sessionlog.watcher import IngestionWorker
 
     click.echo(f"Watching {sources_dir} → {db}")
     worker = IngestionWorker(run_immediately=True)
@@ -34,8 +34,8 @@ def status():
 @click.option("--force", is_flag=True, default=False, help="Re-ingest all files, ignoring the ingestion log.")
 def ingest(force: bool):
     """Run a one-shot incremental ingestion of all JSONL files."""
-    from agenttrace.db import get_writer
-    from agenttrace.ingest import run_ingest
+    from sessionlog.db import get_writer
+    from sessionlog.ingest import run_ingest
 
     if force:
         conn = get_writer()

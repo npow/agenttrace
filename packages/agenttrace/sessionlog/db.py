@@ -11,7 +11,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-from agenttrace.config import DB_PATH
+from sessionlog.config import DB_PATH
 
 # Thread-local storage for reader connections
 _local = threading.local()

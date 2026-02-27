@@ -7,7 +7,7 @@ import traceback
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from agenttrace.config import CLAUDE_PROJECTS_DIR
+from sessionlog.config import CLAUDE_PROJECTS_DIR
 
 
 class _JsonlEventHandler(FileSystemEventHandler):
@@ -156,7 +156,7 @@ class IngestionWorker(threading.Thread):
 
     def _run_pipeline(self):
         """Run the fast ingestion pipeline (no LLM judging)."""
-        from agenttrace.ingest import run_ingest
+        from sessionlog.ingest import run_ingest
         from retro.sessions import build_sessions, build_tool_usage
         from retro.features import extract_features
         from retro.skills import assess_skills
@@ -185,13 +185,13 @@ class IngestionWorker(threading.Thread):
         self._set_status("Generating prescriptions", 9, n)
         generate_prescriptions()
         self._set_status("Building search index", 10, n)
-        from agenttrace.db import rebuild_fts_index
+        from sessionlog.db import rebuild_fts_index
         rebuild_fts_index()
         self._set_idle()
 
     def _run_full_refresh(self, concurrency: int = 12):
         """Run the full pipeline including LLM judging with progress."""
-        from agenttrace.ingest import run_ingest
+        from sessionlog.ingest import run_ingest
         from retro.sessions import build_sessions, build_tool_usage
         from retro.features import extract_features
         from retro.skills import assess_skills
