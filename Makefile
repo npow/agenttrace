@@ -1,19 +1,16 @@
 VENV := .venv
 PYTHON := $(VENV)/bin/python
 
-.PHONY: venv install test dev-install run-retro
+.PHONY: venv install test dev-install
 
 venv:
 	python3.11 -m venv $(VENV)
 
 install: venv
-	$(VENV)/bin/pip install -q -e packages/agenttrace[dev] -e packages/retro
+	$(VENV)/bin/pip install -q -e ".[dev]"
 
 test: install
-	$(PYTHON) -m pytest packages/agenttrace/tests/ -q
-
-run-retro: install
-	$(PYTHON) -m flask --app retro.server run --port 5001
+	$(PYTHON) -m pytest tests/ -q
 
 dev-install: install
 	@echo "Venv ready. Activate with: source .venv/bin/activate"

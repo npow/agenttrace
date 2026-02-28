@@ -18,7 +18,4 @@ jobs:
           python-version: "3.12"
       - run: pip install build
       - run: python -m build
-        working-directory: packages/agenttrace
       - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: packages/agenttrace/dist/
