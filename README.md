@@ -1,7 +1,7 @@
-# agenttrace
+# sessionlog
 
 [![CI](https://github.com/npow/agenttrace/actions/workflows/ci.yml/badge.svg)](https://github.com/npow/agenttrace/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/agenttrace)](https://pypi.org/project/agenttrace/)
+[![PyPI](https://img.shields.io/pypi/v/sessionlog)](https://pypi.org/project/sessionlog/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
@@ -14,17 +14,17 @@ Claude Code and similar agents generate rich session logs, but those logs are ra
 ## Quick start
 
 ```bash
-pip install agenttrace
-agenttrace ingest        # one-shot: parse all sessions into SQLite
-agenttrace start         # daemon: watch for new sessions in real time
+pip install sessionlog
+sessionlog ingest        # one-shot: parse all sessions into SQLite
+sessionlog start         # daemon: watch for new sessions in real time
 ```
 
-Your sessions are now in `~/.agenttrace/data.sqlite` — query with any SQLite client.
+Your sessions are now in `~/.sessionlog/data.sqlite` — query with any SQLite client.
 
 ## Install
 
 ```bash
-pip install agenttrace
+pip install sessionlog
 ```
 
 From source:
@@ -43,7 +43,7 @@ source .venv/bin/activate
 Parse all existing Claude Code sessions:
 
 ```bash
-agenttrace ingest
+sessionlog ingest
 # Done. 42/42 files ingested, 18,302 raw entries, 5,841 progress entries
 # (0 skipped, 0 failed). DB totals: 18302 entries, 127 sessions, 12 projects.
 ```
@@ -53,29 +53,27 @@ agenttrace ingest
 Watch `~/.claude/projects/` and ingest new entries as sessions run:
 
 ```bash
-agenttrace start
-# Watching ~/.claude/projects → ~/.agenttrace/data.sqlite
+sessionlog start
+# Watching ~/.claude/projects → ~/.sessionlog/data.sqlite
 ```
 
 ### Re-ingest from scratch
 
 ```bash
-agenttrace ingest --force
+sessionlog ingest --force
 ```
 
 ### Custom paths
 
 ```bash
-agenttrace start \
+sessionlog start \
   --db /path/to/my.sqlite \
   --sources-dir /path/to/sessions
 ```
 
 ## How it works
 
-`agenttrace` watches `~/.claude/projects/` for JSONL session files using watchdog. When a file changes, it runs an incremental parse: only new lines are read, tool calls and errors are classified, and everything is written to SQLite with WAL mode for concurrent access. A 30-second debounce prevents redundant ingestion when many files change at once.
-
-The `@agenttrace/viewer` npm package provides a React component library for building session visualizers. The `views/` directory contains example view plugins (like `process-monitor`) that implement the viewer API.
+`sessionlog` watches `~/.claude/projects/` for JSONL session files using watchdog. When a file changes, it runs an incremental parse: only new lines are read, tool calls and errors are classified, and everything is written to SQLite with WAL mode for concurrent access. A 30-second debounce prevents redundant ingestion when many files change at once.
 
 ## Development
 
