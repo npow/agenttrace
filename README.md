@@ -9,7 +9,7 @@ See exactly what your AI coding agent did — every tool call, error, and decisi
 
 ## The problem
 
-Claude Code and similar agents generate rich session logs, but those logs are raw JSONL blobs buried in `~/.claude/projects/`. There's no way to query your sessions, spot error patterns, or understand where the agent stumbled. You're flying blind on what your agent actually did.
+Coding agents generate rich session logs, but those logs are usually raw JSONL blobs in hidden folders. There's no way to query your sessions, spot error patterns, or understand where the agent stumbled. You're flying blind on what your agent actually did.
 
 ## Quick start
 
@@ -20,6 +20,22 @@ sessionlog start         # daemon: watch for new sessions in real time
 ```
 
 Your sessions are now in `~/.sessionlog/data.sqlite` — query with any SQLite client.
+
+## Current support status
+
+`sessionlog` now supports multiple **source directories**, but parser support is still **format-specific**.
+
+| Agent | Source discovery | Format parsing | Tool-call extraction |
+| --- | --- | --- | --- |
+| Claude Code | Yes (default) | Yes (validated) | Yes (`tool_use`, `tool_result`, `agent_progress`, `bash_progress`) |
+| Codex (CLI / coding agent logs) | Yes (default path) | Yes (validated from local sample logs) | Yes (`response_item:function_call`, `function_call_output`) |
+| Cursor | Yes (default path) | Partial (validated transcript format: `agent-transcripts/*.txt`) | No native tool-event extraction from transcript files |
+| Antigravity | Yes (default `~/.gemini/antigravity`) | Partial: protobuf storage plus validated `brain/<id>/*.md(.resolved*)` and `code_tracker/active/**` artifacts | Partial: artifact/revision ingestion + bash-snippet heuristics (no protobuf-native tool events yet) |
+| Other agents (Copilot, Windsurf, Cline, Roo, Aider, Gemini, Continue, OpenCode) | Yes (default paths + `--sources-dir`) | Not yet validated as native formats | Pending per-agent adapters |
+
+Important: source support and parser support are different. We now have verified adapters for Claude + Codex, partial Cursor transcript ingestion, and partial Antigravity artifact ingestion from `brain/*.md`, `brain/*.resolved*`, and `code_tracker/active/**`. Other agents require schema samples + adapters for accurate tool analytics.
+
+All ingested rows now include `agent_type` in SQLite (`raw_entries.agent_type`, `progress_entries.agent_type`) so cross-agent analytics can disambiguate source reliably.
 
 ## Install
 
@@ -40,7 +56,7 @@ source .venv/bin/activate
 
 ### One-shot ingestion
 
-Parse all existing Claude Code sessions:
+Parse all existing sessions from known sources (Claude, Codex, Cursor):
 
 ```bash
 sessionlog ingest
@@ -50,11 +66,11 @@ sessionlog ingest
 
 ### Real-time daemon
 
-Watch `~/.claude/projects/` and ingest new entries as sessions run:
+Watch default agent session roots and ingest new entries as sessions run:
 
 ```bash
 sessionlog start
-# Watching ~/.claude/projects → ~/.sessionlog/data.sqlite
+# Watching claude=/Users/you/.claude/projects, codex=/Users/you/.codex/sessions, cursor=/Users/you/.cursor/projects → /Users/you/.sessionlog/data.sqlite
 ```
 
 ### Re-ingest from scratch
@@ -68,12 +84,55 @@ sessionlog ingest --force
 ```bash
 sessionlog start \
   --db /path/to/my.sqlite \
-  --sources-dir /path/to/sessions
+  --sources-dir codex=/path/to/codex/sessions \
+  --sources-dir cursor=/path/to/cursor/sessions \
+  --sources-dir claude=/path/to/claude/projects
+```
+
+You can also set defaults via `SESSIONLOG_SOURCES`:
+
+```bash
+export SESSIONLOG_SOURCES="codex=~/.codex/sessions,cursor=~/.cursor/projects,claude=~/.claude/projects"
 ```
 
 ## How it works
 
-`sessionlog` watches `~/.claude/projects/` for JSONL session files using watchdog. When a file changes, it runs an incremental parse: only new lines are read, tool calls and errors are classified, and everything is written to SQLite with WAL mode for concurrent access. A 30-second debounce prevents redundant ingestion when many files change at once.
+`sessionlog` watches one or more source directories for JSONL session files using watchdog. When a file changes, it runs an incremental parse: only new lines are read, tool calls and errors are classified, and everything is written to SQLite with WAL mode for concurrent access. A 30-second debounce prevents redundant ingestion when many files change at once.
+
+### Tool-call parsing details
+
+Today, tool extraction logic is aligned with Claude-style JSONL:
+
+- Assistant tool calls: `message.content[]` blocks with `type="tool_use"`
+- Tool results/errors: `message.content[]` blocks with `type="tool_result"` + `is_error`
+- Progress events: top-level `type="progress"` with `data.type in {"agent_progress","bash_progress"}`
+
+If another agent emits different field names/shapes, tool metrics can be incomplete or wrong until a dedicated adapter is implemented.
+
+### Verified on this machine
+
+- Codex: JSONL with `response_item` records (`function_call`, `function_call_output`, `message`)
+- Cursor: project data + `agent-transcripts/*.txt` files (plain text transcript sections)
+- Antigravity: protobuf files under `~/.gemini/antigravity/conversations/*.pb` and `annotations/*.pbtxt`
+- Antigravity: markdown artifacts under `~/.gemini/antigravity/brain/<conversation-id>/*.md` with `*.metadata.json` timestamps
+- Antigravity: high-entropy protobuf blobs appear encrypted/compressed-at-rest; `protoc --decode_raw` does not decode directly
+
+## Popular agents to target next
+
+Frequently used agents/editors in current workflows include:
+
+- OpenAI Codex / Codex CLI
+- Cursor
+- GitHub Copilot Agent
+- Windsurf (Cascade)
+- Cline / Roo Code
+- Aider
+- Gemini CLI
+- Continue
+- Antigravity
+- OpenCode
+
+These should be treated as separate parser targets (not just directory aliases), each with fixture-based tests against real sample logs.
 
 ## Development
 

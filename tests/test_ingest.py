@@ -265,6 +265,48 @@ class TestParseEntryPlainStringContent:
 
 
 # ---------------------------------------------------------------------------
+# parse_entry — Codex response_item format
+# ---------------------------------------------------------------------------
+
+class TestParseEntryCodexFormat:
+    def test_parses_codex_function_call_as_assistant_tool_use(self):
+        line = make_line(
+            type="response_item",
+            timestamp="2026-02-27T19:10:46.837Z",
+            payload={
+                "type": "function_call",
+                "name": "exec_command",
+                "arguments": "{\"cmd\":\"rg -n \\\"toLowerCase\\\\(\\\" -S src\"}",
+                "call_id": "call_abc123",
+            },
+        )
+        result = parse_entry(line, PROJECT, fallback_session_id="codex-session-1")
+        assert result is not None
+        assert result["entry_type"] == "assistant"
+        assert result["session_id"] == "codex-session-1"
+        assert result["tool_names"] == ["exec_command"]
+        assert result["content_types"] == ["tool_use"]
+        assert result["tool_input_preview"].startswith("rg -n")
+
+    def test_parses_codex_function_call_output_as_tool_result(self):
+        line = make_line(
+            type="response_item",
+            timestamp="2026-02-27T19:10:46.957Z",
+            payload={
+                "type": "function_call_output",
+                "call_id": "call_abc123",
+                "output": "Chunk ID: x\nProcess exited with code 2\nOutput:\nrg: src: No such file",
+            },
+        )
+        result = parse_entry(line, PROJECT, fallback_session_id="codex-session-1")
+        assert result is not None
+        assert result["entry_type"] == "user"
+        assert result["is_tool_result"] is True
+        assert result["tool_result_error"] is True
+        assert result["tool_result_error_type"] == "file_not_found"
+
+
+# ---------------------------------------------------------------------------
 # parse_progress_entry — filtering
 # ---------------------------------------------------------------------------
 

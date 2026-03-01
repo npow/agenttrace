@@ -57,6 +57,7 @@ class TestSchemaCreation:
         expected_cols = {
             "entry_id",
             "session_id",
+            "agent_type",
             "progress_type",
             "parent_tool_id",
             "tool_name",

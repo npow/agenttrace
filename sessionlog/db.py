@@ -94,6 +94,7 @@ def _init_schema(conn: sqlite3.Connection):
             entry_id TEXT PRIMARY KEY,
             session_id TEXT,
             project_name TEXT,
+            agent_type TEXT DEFAULT 'unknown',
             entry_type TEXT,
             timestamp_utc TIMESTAMP,
             parent_uuid TEXT,
@@ -197,6 +198,7 @@ def _init_schema(conn: sqlite3.Connection):
         CREATE TABLE IF NOT EXISTS progress_entries (
             entry_id       TEXT PRIMARY KEY,
             session_id     TEXT,
+            agent_type     TEXT DEFAULT 'unknown',
             progress_type  TEXT,              -- 'agent_progress' | 'bash_progress'
             parent_tool_id TEXT,              -- toolUseId of parent Task/Bash call
             tool_name      TEXT,              -- sub-agent tool name (agent_progress only)
@@ -365,6 +367,7 @@ def _init_schema(conn: sqlite3.Connection):
 
     # Migrate: add new columns to raw_entries if missing
     _migrate_add_columns(conn, "raw_entries", [
+        ("agent_type", "TEXT DEFAULT 'unknown'"),
         ("tool_result_error_type", "TEXT"),
         ("tool_file_paths", "TEXT"),
         # Primary tool's key input: Bash command, Task prompt snippet, etc.
@@ -398,6 +401,9 @@ def _init_schema(conn: sqlite3.Connection):
         ("subagent_tool_diversity", "INTEGER DEFAULT 0"),
         ("subagent_error_rate",    "REAL DEFAULT 0"),
         ("bash_heartbeat_count",   "INTEGER DEFAULT 0"),
+    ])
+    _migrate_add_columns(conn, "progress_entries", [
+        ("agent_type", "TEXT DEFAULT 'unknown'"),
     ])
 
     # Create indexes for common queries

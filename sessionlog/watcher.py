@@ -3,11 +3,12 @@
 import threading
 import time
 import traceback
+from pathlib import Path
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from sessionlog.config import CLAUDE_PROJECTS_DIR
+from sessionlog.config import get_source_specs
 
 
 class _JsonlEventHandler(FileSystemEventHandler):
@@ -27,7 +28,7 @@ class _JsonlEventHandler(FileSystemEventHandler):
 
 
 class IngestionWorker(threading.Thread):
-    """Daemon thread that watches ~/.claude/projects/ for changed JSONL files.
+    """Daemon thread that watches configured source dirs for changed JSONL files.
 
     Uses watchdog's Observer for real-time file system event watching instead
     of polling. When changes are detected, runs the fast pipeline (everything
@@ -41,9 +42,14 @@ class IngestionWorker(threading.Thread):
        "current": N, "total": N}
     """
 
-    def __init__(self, run_immediately: bool = False):
+    def __init__(
+        self,
+        run_immediately: bool = False,
+        source_specs: list[tuple[str, Path]] | None = None,
+    ):
         super().__init__(daemon=True, name="ingestion-worker")
         self._run_immediately = run_immediately
+        self._source_specs = source_specs or get_source_specs()
         self._stop_event = threading.Event()
         self._change_event = threading.Event()
         self._last_pipeline_time: float = 0.0
@@ -83,12 +89,20 @@ class IngestionWorker(threading.Thread):
         self._change_event.set()
 
     def _start_observer(self):
-        """Start the watchdog observer if the watch directory exists."""
-        if not CLAUDE_PROJECTS_DIR.exists():
-            return
+        """Start the watchdog observer for any existing source directories."""
         handler = _JsonlEventHandler(self._on_fs_change)
         self._observer = Observer()
-        self._observer.schedule(handler, str(CLAUDE_PROJECTS_DIR), recursive=True)
+        scheduled = False
+        for _source_name, source_dir in self._source_specs:
+            if source_dir is None:
+                continue
+            if not source_dir.exists() or not source_dir.is_dir():
+                continue
+            self._observer.schedule(handler, str(source_dir), recursive=True)
+            scheduled = True
+        if not scheduled:
+            self._observer = None
+            return
         self._observer.start()
 
     def run(self):
@@ -167,7 +181,7 @@ class IngestionWorker(threading.Thread):
 
         n = 10
         self._set_status("Ingesting JSONL files", 1, n)
-        run_ingest()
+        run_ingest(source_specs=self._source_specs)
         self._set_status("Building sessions", 2, n)
         build_sessions()
         self._set_status("Analyzing tool usage", 3, n)
@@ -204,7 +218,7 @@ class IngestionWorker(threading.Thread):
         # Phase 1: fast pipeline (9 steps)
         n = 9
         self._set_status("Ingesting JSONL files", 1, n)
-        run_ingest()
+        run_ingest(source_specs=self._source_specs)
         self._set_status("Building sessions", 2, n)
         build_sessions()
         self._set_status("Analyzing tool usage", 3, n)
